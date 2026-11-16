@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows:
@@ -56,20 +56,35 @@ jobs:
 
       - name: Configure
         run: |
+          set -o pipefail
           which node npm
           cmake -B build -G Ninja -S . \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_DOCS=OFF \
-            -DBUILD_TESTS=OFF
+            -DBUILD_TESTS=OFF 2>&1 | tee ci-step.log
 
       - name: Build
-        run: ninja -C build
+        run: |
+          set -o pipefail
+          ninja -C build 2>&1 | tee ci-step.log
 
       - name: Package
         run: |
+          set -o pipefail
+          {
           cpack -G NSIS --config ./build/CPackConfig.cmake
           cpack -G ZIP --config ./build/CPackConfig.cmake
           ls -l build/cpack_artifacts
+          } 2>&1 | tee ci-step.log
+
+      # Surface the tail of the failing step as an annotation (readable via the API)
+      - name: Report failure
+        if: failure()
+        run: |
+          if [ -f ci-step.log ]; then
+            msg=$(grep -v '^\s*$' ci-step.log | tail -n 60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Failing step output::${msg}"
+          fi
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
@@ -79,3 +94,17 @@ jobs:
             build/cpack_artifacts/*.exe
             build/cpack_artifacts/*.zip
           if-no-files-found: error
+
+      # Rolling pre-release so the latest installer has a direct download link
+      - name: Publish pre-release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/fold'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=fold-latest
+          gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
+          gh release create "$TAG" build/cpack_artifacts/*.exe build/cpack_artifacts/*.zip \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "Apollo Fold (latest build)" \
+            --notes "Automatic build of the fold branch at ${GITHUB_SHA::7}. Run the .exe installer on your Windows host."
