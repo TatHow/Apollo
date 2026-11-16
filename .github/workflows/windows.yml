@@ -54,6 +54,9 @@ jobs:
             mingw-w64-ucrt-x86_64-nlohmann_json
             mingw-w64-ucrt-x86_64-ninja
 
+      - name: Show library versions
+        run: pacman -Q mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-boost mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-gcc | tr '\n' ' ' | xargs -0 -I{} echo "::notice title=Library versions::{}"
+
       - name: Configure
         run: |
           set -o pipefail
@@ -82,7 +85,14 @@ jobs:
         if: failure()
         run: |
           if [ -f ci-step.log ]; then
-            msg=$(grep -v '^\s*$' ci-step.log | tail -n 60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            # Compiler errors first (with a little context), long command lines trimmed
+            errs=$(grep -n -E "error:|Error |FAILED:" ci-step.log | head -n 1 | cut -d: -f1)
+            if [ -n "$errs" ]; then
+              sel=$(grep -E -A6 "error:|Error " ci-step.log | grep -v "^D:.*c++.exe" | head -n 80)
+            else
+              sel=$(grep -v '^\s*$' ci-step.log | tail -n 60)
+            fi
+            msg=$(echo "$sel" | cut -c1-400 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
             echo "::error title=Failing step output::${msg}"
           fi
 
