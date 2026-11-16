@@ -1,0 +1,81 @@
+name: Build Windows installer
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: win-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Build (Windows x64)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # Official MSVC-built Node.js (MSYS2's nodejs crashes, see docs/building.md)
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          path-type: inherit
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-boost
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-cppwinrt
+            mingw-w64-ucrt-x86_64-curl-winssl
+            mingw-w64-ucrt-x86_64-MinHook
+            mingw-w64-ucrt-x86_64-miniupnpc
+            mingw-w64-ucrt-x86_64-nsis
+            mingw-w64-ucrt-x86_64-onevpl
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-opus
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-nlohmann_json
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Configure
+        run: |
+          which node npm
+          cmake -B build -G Ninja -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_DOCS=OFF \
+            -DBUILD_TESTS=OFF
+
+      - name: Build
+        run: ninja -C build
+
+      - name: Package
+        run: |
+          cpack -G NSIS --config ./build/CPackConfig.cmake
+          cpack -G ZIP --config ./build/CPackConfig.cmake
+          ls -l build/cpack_artifacts
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Apollo-Fold-windows
+          path: |
+            build/cpack_artifacts/*.exe
+            build/cpack_artifacts/*.zip
+          if-no-files-found: error
