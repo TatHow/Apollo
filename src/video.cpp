@@ -826,9 +826,9 @@ namespace video {
       },
       {
         // SDR-specific options
-        {"profile"s, [](const config_t &cfg) {
-           if (cfg.profile == 66) return "baseline"s;
-           if (cfg.profile == 77) return "main"s;
+        // Fold fork: upstream's backport referenced a config_t::profile field that this
+        // branch doesn't have; Moonlight clients never request baseline/main, so use high.
+        {"profile"s, [](const config_t &) {
            return "high"s;
          }},
       },
