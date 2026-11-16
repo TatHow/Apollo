@@ -124,6 +124,15 @@ namespace proc {
     int execute(const ctx_t& _app, std::shared_ptr<rtsp_stream::launch_session_t> launch_session);
 
     /**
+     * @brief Resize the running session's virtual display to the mode a reconnecting client asks for.
+     * @details Used on /resume so a client whose screen changed size (rotation, foldable inner/outer
+     *          screen, split layouts) gets a host desktop that matches it. Applies the same scale
+     *          factor rules as execute() and updates launch_session->width/height accordingly.
+     * @return true if the virtual display now matches (or already matched) the requested mode.
+     */
+    bool resize_virtual_display(std::shared_ptr<rtsp_stream::launch_session_t> launch_session);
+
+    /**
      * @return `_app_id` if a process is running, otherwise returns `0`
      */
     int running();
@@ -147,6 +156,10 @@ namespace proc {
     boost::process::v1::environment _env;
 
     std::shared_ptr<rtsp_stream::launch_session_t> _launch_session;
+
+    // Identity the virtual display was created with, so it can be recreated at a new size
+    std::string _vdisplay_uuid_str;
+    std::string _vdisplay_device_name;
     std::shared_ptr<config::input_t> _saved_input_config;
 
     std::vector<ctx_t> _apps;

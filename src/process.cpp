@@ -277,6 +277,8 @@ namespace proc {
         }
 
         memcpy(&launch_session->display_guid, &device_uuid, sizeof(GUID));
+        _vdisplay_uuid_str = device_uuid_str;
+        _vdisplay_device_name = device_name;
 
         int target_fps = launch_session->fps ? launch_session->fps : 60000;
 
@@ -558,6 +560,97 @@ namespace proc {
 #endif
 
     return 0;
+  }
+
+  bool proc_t::resize_virtual_display(std::shared_ptr<rtsp_stream::launch_session_t> launch_session) {
+#ifdef _WIN32
+    if (!virtual_display || !_launch_session || vDisplayDriverStatus != VDISPLAY::DRIVER_STATUS::OK) {
+      return false;
+    }
+    if (!launch_session->width || !launch_session->height) {
+      return false;
+    }
+
+    uint32_t render_width = launch_session->width;
+    uint32_t render_height = launch_session->height;
+
+    int scale_factor = launch_session->scale_factor;
+    if (_app.scale_factor != 100) {
+      scale_factor = _app.scale_factor;
+    }
+    if (scale_factor != 100) {
+      render_width *= ((float) scale_factor / 100);
+      render_height *= ((float) scale_factor / 100);
+    }
+    render_width &= ~1;
+    render_height &= ~1;
+
+    launch_session->width = render_width;
+    launch_session->height = render_height;
+
+    int target_fps = launch_session->fps ? launch_session->fps : 60000;
+    if (target_fps < 1000) {
+      target_fps *= 1000;
+    }
+    if (config::video.double_refreshrate) {
+      target_fps *= 2;
+    }
+
+    auto display_name_w = platf::from_utf8(display_name);
+    DEVMODEW current {};
+    if (VDISPLAY::getDeviceSettings(display_name_w.c_str(), current) &&
+        current.dmPelsWidth == render_width && current.dmPelsHeight == render_height) {
+      BOOST_LOG(debug) << "Virtual display already at "sv << render_width << 'x' << render_height;
+    } else {
+      BOOST_LOG(info) << "Resizing virtual display "sv << display_name << " to "sv << render_width << 'x' << render_height;
+
+      // First try a plain mode change on the existing display
+      VDISPLAY::changeDisplaySettings(display_name_w.c_str(), render_width, render_height, target_fps);
+
+      DEVMODEW after {};
+      bool matched = VDISPLAY::getDeviceSettings(display_name_w.c_str(), after) &&
+                     after.dmPelsWidth == render_width && after.dmPelsHeight == render_height;
+
+      if (!matched) {
+        // The driver only advertises the mode a display was created with, so recreate it
+        // at the new size. The identity (GUID) is unchanged, so Windows keeps per-display
+        // settings such as scaling and window placement.
+        BOOST_LOG(info) << "Mode change not accepted, recreating virtual display at the new size"sv;
+        VDISPLAY::removeVirtualDisplay(_launch_session->display_guid);
+
+        std::wstring new_name = VDISPLAY::createVirtualDisplay(
+          _vdisplay_uuid_str.c_str(),
+          _vdisplay_device_name.c_str(),
+          render_width,
+          render_height,
+          target_fps,
+          _launch_session->display_guid
+        );
+
+        if (new_name.empty()) {
+          BOOST_LOG(warning) << "Virtual display recreation failed or name not available in time"sv;
+          return false;
+        }
+
+        VDISPLAY::changeDisplaySettings(new_name.c_str(), render_width, render_height, target_fps);
+        if (config::video.isolated_virtual_display_option == true) {
+          VDISPLAY::changeDisplaySettings2(new_name.c_str(), render_width, render_height, target_fps, true);
+        }
+
+        display_name = platf::to_utf8(new_name);
+        config::video.output_name = display_device::map_display_name(display_name);
+      }
+    }
+
+    _launch_session->width = render_width;
+    _launch_session->height = render_height;
+    _launch_session->fps = launch_session->fps;
+    launch_session->virtual_display = true;
+    launch_session->display_guid = _launch_session->display_guid;
+    return true;
+#else
+    return false;
+#endif
   }
 
   int proc_t::running() {

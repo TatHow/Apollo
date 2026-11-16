@@ -1407,6 +1407,15 @@ namespace nvhttp {
       launch_session->input_only = true;
     }
 
+    if (proc::proc.virtual_display) {
+      // Fold fork: a client reconnecting with a different resolution (rotation, foldable
+      // inner/outer screen, split layout) gets the virtual display resized to match, so the
+      // host desktop always has the client's exact resolution.
+      if (proc::proc.resize_virtual_display(launch_session)) {
+        BOOST_LOG(info) << "Resume: virtual display matches client at "sv << launch_session->width << 'x' << launch_session->height;
+      }
+    }
+
     if (no_active_sessions && !proc::proc.virtual_display) {
       // We want to prepare display only if there are no active sessions
       // and the current session isn't virtual display at the moment.
