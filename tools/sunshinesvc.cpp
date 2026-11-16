@@ -119,14 +119,16 @@ HANDLE DuplicateTokenForSession(DWORD console_session_id) {
 HANDLE OpenLogFileHandle() {
   WCHAR log_file_name[MAX_PATH];
 
-  // Create sunshine.log in the Temp folder (usually %SYSTEMROOT%\Temp)
+  // Create apollo.log in the Temp folder (usually %SYSTEMROOT%\Temp). Fold fork: not
+  // sunshine.log, so this service can run alongside a Sunshine service, which keeps
+  // that file open exclusively.
   GetTempPathW(_countof(log_file_name), log_file_name);
-  wcscat_s(log_file_name, L"sunshine.log");
+  wcscat_s(log_file_name, L"apollo.log");
 
   // The file handle must be inheritable for our child process to use it
   SECURITY_ATTRIBUTES security_attributes = {sizeof(security_attributes), nullptr, TRUE};
 
-  // Overwrite the old sunshine.log
+  // Overwrite the old log
   return CreateFileW(log_file_name, GENERIC_WRITE, FILE_SHARE_READ, &security_attributes, CREATE_ALWAYS, 0, nullptr);
 }
 
