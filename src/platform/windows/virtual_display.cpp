@@ -782,11 +782,23 @@ std::wstring createVirtualDisplay(
 
 	uint32_t retryInterval = 20;
 	wchar_t deviceName[CCHDEVICENAME]{};
+	bool extended = false;
 	while (!GetAddedDisplayName(output, deviceName)) {
 		Sleep(retryInterval);
 		if (retryInterval > 320) {
-			printf("[SUDOVDA] Cannot get name for newly added virtual display!\n");
-			return std::wstring();
+			if (extended) {
+				printf("[SUDOVDA] Cannot get name for newly added virtual display!\n");
+				return std::wstring();
+			}
+			// Fold build: Windows can attach the display but leave it switched off,
+			// when the topology it remembers for this set of displays (for example
+			// one saved while "deactivate other displays" was in effect) doesn't
+			// include it. Extend the desktop onto every display and look again.
+			printf("[SUDOVDA] Virtual display not active yet, extending the desktop onto it\n");
+			LONG result = SetDisplayConfig(0, nullptr, 0, nullptr, SDC_TOPOLOGY_EXTEND | SDC_APPLY);
+			printf("[SUDOVDA] SetDisplayConfig(EXTEND) returned %ld\n", result);
+			extended = true;
+			retryInterval = 40;
 		}
 		retryInterval *= 2;
 	}
