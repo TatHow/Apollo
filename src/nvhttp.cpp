@@ -462,6 +462,7 @@ namespace nvhttp {
     launch_session->virtual_display = util::from_view(get_arg(args, "virtualDisplay", "0")) || named_cert_p->always_use_virtual_display;
     launch_session->scale_factor = util::from_view(get_arg(args, "scaleFactor", "100"));
     launch_session->fold_dpi = util::from_view(get_arg(args, "foldDpi", "0"));
+    launch_session->fold_desktop = util::from_view(get_arg(args, "foldDesktop", "0"));
 
     launch_session->client_do_cmds = named_cert_p->do_cmds;
     launch_session->client_undo_cmds = named_cert_p->undo_cmds;

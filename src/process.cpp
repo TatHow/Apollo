@@ -57,6 +57,21 @@ namespace platf {
 
 namespace proc {
 #ifdef _WIN32
+  // A display that was just created or switched on can take a moment to show up
+  // in the device list. Without its id the display settings would fall back to
+  // the primary monitor (and "deactivate other displays" would turn ours off).
+  static std::string map_new_display_name(const std::string &display_name) {
+    for (int i = 0; i < 40; i++) {
+      auto id = display_device::map_display_name(display_name);
+      if (!id.empty()) {
+        return id;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    BOOST_LOG(warning) << "Virtual display "sv << display_name << " did not appear in the device list"sv;
+    return {};
+  }
+
   // Fold build: set Windows display scaling on the virtual display. Scaling is a
   // per-user setting, so try as the signed-in user first, then as ourselves.
   static void apply_fold_dpi(const std::string &display_name, int percent) {
@@ -360,7 +375,7 @@ namespace proc {
           // So we always set output_name to the newly created virtual display as a workaround for
           // empty name when probing graphics cards.
 
-          config::video.output_name = display_device::map_display_name(this->display_name);
+          config::video.output_name = map_new_display_name(this->display_name);
           apply_fold_dpi(this->display_name, launch_session->fold_dpi);
         } else {
           BOOST_LOG(warning) << "Virtual Display creation failed, or cannot get created display name in time!";
@@ -372,7 +387,12 @@ namespace proc {
       }
     }
 
-    display_device::configure_display(config::video, *launch_session);
+    if (this->virtual_display && config::video.output_name.empty()) {
+      // Don't let the display settings target the primary monitor instead
+      BOOST_LOG(warning) << "Skipping display device settings: virtual display id unknown"sv;
+    } else {
+      display_device::configure_display(config::video, *launch_session);
+    }
 
     // We should not preserve display state when using virtual display.
     // It is already handled by Windows properly.
@@ -676,7 +696,7 @@ namespace proc {
       }
       virtual_display = true;
       display_name = platf::to_utf8(vdisplay_name);
-      config::video.output_name = display_device::map_display_name(display_name);
+      config::video.output_name = map_new_display_name(display_name);
       display_device::reset_persistence();
     }
 
@@ -722,7 +742,7 @@ namespace proc {
         }
 
         display_name = platf::to_utf8(new_name);
-        config::video.output_name = display_device::map_display_name(display_name);
+        config::video.output_name = map_new_display_name(display_name);
       }
     }
 

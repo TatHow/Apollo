@@ -871,6 +871,13 @@ namespace display_device {
       return failed_to_parse_tag_t {};
     }
 
+    // Fold build: Desktop mode streams the monitor as it is; the client's
+    // resolution only sets the stream size, not the monitor's mode
+    if (session.fold_desktop && !session.virtual_display) {
+      config.m_resolution = std::nullopt;
+      config.m_refresh_rate = std::nullopt;
+    }
+
     return config;
   }
 }  // namespace display_device
