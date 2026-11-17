@@ -1407,7 +1407,7 @@ namespace nvhttp {
       launch_session->input_only = true;
     }
 
-    if (proc::proc.virtual_display) {
+    if (proc::proc.virtual_display || launch_session->virtual_display) {
       // Fold fork: a client reconnecting with a different resolution (rotation, foldable
       // inner/outer screen, split layout) gets the virtual display resized to match, so the
       // host desktop always has the client's exact resolution.

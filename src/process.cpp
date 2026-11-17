@@ -331,6 +331,7 @@ namespace proc {
           BOOST_LOG(warning) << "Virtual Display creation failed, or cannot get created display name in time!";
         }
       } else {
+        BOOST_LOG(warning) << "Virtual display requested but the SudoVDA driver is not available (status "sv << (int) vDisplayDriverStatus << ')';
         // Driver isn't working so we don't need to track virtual display.
         launch_session->virtual_display = false;
       }
@@ -564,11 +565,18 @@ namespace proc {
 
   bool proc_t::resize_virtual_display(std::shared_ptr<rtsp_stream::launch_session_t> launch_session) {
 #ifdef _WIN32
-    if (!virtual_display || !_launch_session || vDisplayDriverStatus != VDISPLAY::DRIVER_STATUS::OK) {
+    if (!_launch_session || !launch_session->width || !launch_session->height) {
       return false;
     }
-    if (!launch_session->width || !launch_session->height) {
+    if (!virtual_display && !launch_session->virtual_display) {
       return false;
+    }
+    if (vDisplayDriverStatus != VDISPLAY::DRIVER_STATUS::OK) {
+      initVDisplayDriver();
+      if (vDisplayDriverStatus != VDISPLAY::DRIVER_STATUS::OK) {
+        BOOST_LOG(warning) << "Virtual display requested but the SudoVDA driver is not available (status "sv << (int) vDisplayDriverStatus << ')';
+        return false;
+      }
     }
 
     uint32_t render_width = launch_session->width;
@@ -594,6 +602,47 @@ namespace proc {
     }
     if (config::video.double_refreshrate) {
       target_fps *= 2;
+    }
+
+    if (!virtual_display) {
+      // Fold fork: the app was started on the physical display (for example by an
+      // older client, or before "always use virtual display" was turned on). Create
+      // the virtual display now instead of requiring the app to be quit first.
+      std::string device_name = launch_session->device_name;
+      std::string device_uuid_str = launch_session->unique_id;
+      auto device_uuid = uuid_util::uuid_t::parse(launch_session->unique_id);
+      if (_app.use_app_identity) {
+        device_name = _app.name;
+        device_uuid_str = _app.uuid;
+        device_uuid = uuid_util::uuid_t::parse(_app.uuid);
+      }
+      memcpy(&_launch_session->display_guid, &device_uuid, sizeof(GUID));
+      _vdisplay_uuid_str = device_uuid_str;
+      _vdisplay_device_name = device_name;
+
+      BOOST_LOG(info) << "Resume: creating virtual display at "sv << render_width << 'x' << render_height;
+      std::wstring vdisplay_name = VDISPLAY::createVirtualDisplay(
+        device_uuid_str.c_str(),
+        device_name.c_str(),
+        render_width,
+        render_height,
+        target_fps,
+        _launch_session->display_guid
+      );
+      _launch_session->virtual_display = true;
+      if (vdisplay_name.empty()) {
+        BOOST_LOG(warning) << "Virtual Display creation failed, or cannot get created display name in time!"sv;
+        return false;
+      }
+      BOOST_LOG(info) << "Virtual Display created at "sv << platf::to_utf8(vdisplay_name);
+      VDISPLAY::changeDisplaySettings(vdisplay_name.c_str(), render_width, render_height, target_fps);
+      if (config::video.isolated_virtual_display_option == true) {
+        VDISPLAY::changeDisplaySettings2(vdisplay_name.c_str(), render_width, render_height, target_fps, true);
+      }
+      virtual_display = true;
+      display_name = platf::to_utf8(vdisplay_name);
+      config::video.output_name = display_device::map_display_name(display_name);
+      display_device::reset_persistence();
     }
 
     auto display_name_w = platf::from_utf8(display_name);
