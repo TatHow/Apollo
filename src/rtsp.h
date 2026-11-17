@@ -50,6 +50,7 @@ namespace rtsp_stream {
     bool enable_sops;
     bool virtual_display;
     uint32_t scale_factor;
+    int fold_dpi = 0;  // Windows scaling to set on the virtual display (percent), 0 = leave it
 
     std::optional<crypto::cipher::gcm_t> rtsp_cipher;
     std::string rtsp_url_scheme;

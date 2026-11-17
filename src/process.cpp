@@ -48,7 +48,41 @@
 
 #define DEFAULT_APP_IMAGE_PATH SUNSHINE_ASSETS_DIR "/box.png"
 
+#ifdef _WIN32
+namespace platf {
+  HANDLE retrieve_users_token(bool elevated);
+  std::error_code impersonate_current_user(HANDLE user_token, std::function<void()> callback);
+}  // namespace platf
+#endif
+
 namespace proc {
+#ifdef _WIN32
+  // Fold build: set Windows display scaling on the virtual display. Scaling is a
+  // per-user setting, so try as the signed-in user first, then as ourselves.
+  static void apply_fold_dpi(const std::string &display_name, int percent) {
+    if (percent <= 0 || display_name.empty()) {
+      return;
+    }
+    auto name = platf::from_utf8(display_name);
+    int result = -1;
+    HANDLE user_token = platf::retrieve_users_token(false);
+    if (user_token) {
+      platf::impersonate_current_user(user_token, [&]() {
+        result = VDISPLAY::setDisplayScaleByName(name.c_str(), percent);
+      });
+      CloseHandle(user_token);
+    }
+    if (result != percent) {
+      result = VDISPLAY::setDisplayScaleByName(name.c_str(), percent);
+    }
+    if (result == percent) {
+      BOOST_LOG(info) << "Virtual display scaling set to "sv << percent << '%';
+    } else {
+      BOOST_LOG(warning) << "Could not set virtual display scaling to "sv << percent << "% (now "sv << result << ')';
+    }
+  }
+#endif
+
   using namespace std::literals;
   namespace pt = boost::property_tree;
 
@@ -327,6 +361,7 @@ namespace proc {
           // empty name when probing graphics cards.
 
           config::video.output_name = display_device::map_display_name(this->display_name);
+          apply_fold_dpi(this->display_name, launch_session->fold_dpi);
         } else {
           BOOST_LOG(warning) << "Virtual Display creation failed, or cannot get created display name in time!";
         }
@@ -690,6 +725,8 @@ namespace proc {
         config::video.output_name = display_device::map_display_name(display_name);
       }
     }
+
+    apply_fold_dpi(display_name, launch_session->fold_dpi);
 
     _launch_session->width = render_width;
     _launch_session->height = render_height;

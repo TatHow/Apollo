@@ -5,6 +5,9 @@
 #include <initguid.h>
 #include <combaseapi.h>
 #include <thread>
+#include <algorithm>
+#include <cstdlib>
+#include <string_view>
 
 #include <wrl/client.h>
 #include <dxgi.h>
@@ -536,6 +539,112 @@ bool getDisplayHDRByName(const wchar_t* displayName) {
 	}
 
 	return getDisplayHDR(adapterId, displayName);
+}
+
+// Undocumented DisplayConfig requests behind the Settings app's "Scale" option
+// (the same ones used by tools such as SetDPI). Scale values are steps relative
+// to the display's recommended scale.
+namespace {
+	constexpr int DPI_SCALE_GET = -3;
+	constexpr int DPI_SCALE_SET = -4;
+	constexpr int DPI_VALUES[] = {100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500};
+	constexpr int DPI_VALUE_COUNT = sizeof(DPI_VALUES) / sizeof(DPI_VALUES[0]);
+
+	struct dpi_scale_get_t {
+		DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+		int32_t minScaleRel;
+		int32_t curScaleRel;
+		int32_t maxScaleRel;
+	};
+
+	struct dpi_scale_set_t {
+		DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+		int32_t scaleRel;
+	};
+
+	bool findDisplaySource(const wchar_t* displayName, LUID& adapterId, uint32_t& sourceId) {
+		UINT32 pathCount;
+		UINT32 modeCount;
+		if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount)) {
+			return false;
+		}
+		std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+		std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+		if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(), &modeCount, modes.data(), nullptr)) {
+			return false;
+		}
+		for (UINT32 i = 0; i < pathCount; i++) {
+			DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName = {};
+			sourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+			sourceName.header.size = sizeof(sourceName);
+			sourceName.header.adapterId = paths[i].sourceInfo.adapterId;
+			sourceName.header.id = paths[i].sourceInfo.id;
+			if (DisplayConfigGetDeviceInfo(&sourceName.header) != ERROR_SUCCESS) {
+				continue;
+			}
+			if (std::wstring_view(displayName) == sourceName.viewGdiDeviceName) {
+				adapterId = paths[i].sourceInfo.adapterId;
+				sourceId = paths[i].sourceInfo.id;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool getDpiScale(const LUID& adapterId, uint32_t sourceId, dpi_scale_get_t& info) {
+		info = {};
+		info.header.type = (DISPLAYCONFIG_DEVICE_INFO_TYPE) DPI_SCALE_GET;
+		info.header.size = sizeof(info);
+		info.header.adapterId = adapterId;
+		info.header.id = sourceId;
+		return DisplayConfigGetDeviceInfo(&info.header) == ERROR_SUCCESS;
+	}
+}
+
+int setDisplayScaleByName(const wchar_t* displayName, int percent) {
+	LUID adapterId;
+	uint32_t sourceId;
+	if (!findDisplaySource(displayName, adapterId, sourceId)) {
+		return -1;
+	}
+
+	dpi_scale_get_t info;
+	if (!getDpiScale(adapterId, sourceId, info)) {
+		return -1;
+	}
+
+	// The recommended scale sits at index -minScaleRel of the value table
+	int recommended = -info.minScaleRel;
+	int current = recommended + info.curScaleRel;
+	int maxIndex = (std::min)(recommended + info.maxScaleRel, DPI_VALUE_COUNT - 1);
+	auto valueAt = [](int index) {
+		return DPI_VALUES[std::clamp(index, 0, DPI_VALUE_COUNT - 1)];
+	};
+
+	int target = 0;
+	for (int i = 0; i < DPI_VALUE_COUNT; i++) {
+		if (std::abs(DPI_VALUES[i] - percent) < std::abs(DPI_VALUES[target] - percent)) {
+			target = i;
+		}
+	}
+	target = std::clamp(target, 0, (std::max)(maxIndex, 0));
+
+	if (target != current) {
+		dpi_scale_set_t request = {};
+		request.header.type = (DISPLAYCONFIG_DEVICE_INFO_TYPE) DPI_SCALE_SET;
+		request.header.size = sizeof(request);
+		request.header.adapterId = adapterId;
+		request.header.id = sourceId;
+		request.scaleRel = target - recommended;
+		DisplayConfigSetDeviceInfo(&request.header);
+
+		if (!getDpiScale(adapterId, sourceId, info)) {
+			return -1;
+		}
+		current = recommended + info.curScaleRel;
+	}
+
+	return valueAt(current);
 }
 
 bool setDisplayHDRByName(const wchar_t* displayName, bool enableAdvancedColor) {
