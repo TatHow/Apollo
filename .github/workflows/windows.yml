@@ -57,6 +57,41 @@ jobs:
       - name: Show library versions
         run: pacman -Q mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-boost mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-gcc | tr '\n' ' ' | xargs -0 -I{} echo "::notice title=Library versions::{}"
 
+      # The repo only carries the SudoVDA .inf/.cat/.cer; the driver binary
+      # (SudoVDA.dll) and its installer tool (nefconc.exe) are not in git, so
+      # without this the virtual display driver never gets installed. Take the
+      # signed driver files from the official Apollo release installer.
+      - name: Fetch SudoVDA driver binaries
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          mkdir -p upstream && cd upstream
+          TAG=$(gh release list --repo ClassicOldSong/Apollo --exclude-drafts --limit 20 --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease | not)][0].tagName')
+          echo "Using upstream Apollo release $TAG"
+          gh release download "$TAG" --repo ClassicOldSong/Apollo --pattern "*.exe" --clobber
+          ls -l
+          7z x -y -oextracted ./*.exe > /dev/null
+          DLL=$(find extracted -iname 'SudoVDA.dll' | head -n 1)
+          NEF=$(find extracted -iname 'nefconc.exe' | head -n 1)
+          if [ -z "$DLL" ] || [ -z "$NEF" ]; then
+            find extracted -ipath '*sudovda*' | head -n 40
+            echo "::error title=SudoVDA::Could not find SudoVDA.dll / nefconc.exe in upstream $TAG"
+            exit 1
+          fi
+          SRC=$(dirname "$DLL")
+          DEST=../src_assets/windows/drivers/sudovda
+          # Use the upstream driver folder as a set so the catalog matches the dll
+          for f in "$SRC"/*; do
+            case "$(basename "$f")" in
+              install.bat|uninstall.bat) ;;   # keep ours
+              *) cp -f "$f" "$DEST/" ;;
+            esac
+          done
+          cp -f "$NEF" "$DEST/"
+          echo "::notice title=SudoVDA::Bundled driver from upstream $TAG: $(ls "$DEST" | tr '\n' ' ')"
+
       - name: Configure
         run: |
           set -o pipefail
