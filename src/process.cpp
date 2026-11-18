@@ -72,29 +72,78 @@ namespace proc {
     return {};
   }
 
-  // Fold build: set Windows display scaling on the virtual display. Scaling is a
-  // per-user setting, so try as the signed-in user first, then as ourselves.
+  // Scaling is a per-user setting, so act as the signed-in user first, then as ourselves
+  template<class F>
+  static int as_user_then_self(F &&fn, int expected) {
+    int result = -1;
+    HANDLE user_token = platf::retrieve_users_token(false);
+    if (user_token) {
+      platf::impersonate_current_user(user_token, [&]() {
+        result = fn();
+      });
+      CloseHandle(user_token);
+    }
+    if (result < 0 || (expected > 0 && result != expected)) {
+      result = fn();
+    }
+    return result;
+  }
+
+  // Fold build: set Windows display scaling on a display (by GDI name)
   static void apply_fold_dpi(const std::string &display_name, int percent) {
     if (percent <= 0 || display_name.empty()) {
       return;
     }
     auto name = platf::from_utf8(display_name);
-    int result = -1;
-    HANDLE user_token = platf::retrieve_users_token(false);
-    if (user_token) {
-      platf::impersonate_current_user(user_token, [&]() {
-        result = VDISPLAY::setDisplayScaleByName(name.c_str(), percent);
-      });
-      CloseHandle(user_token);
-    }
-    if (result != percent) {
-      result = VDISPLAY::setDisplayScaleByName(name.c_str(), percent);
-    }
+    int result = as_user_then_self([&]() { return VDISPLAY::setDisplayScaleByName(name.c_str(), percent); }, percent);
     if (result == percent) {
-      BOOST_LOG(info) << "Virtual display scaling set to "sv << percent << '%';
+      BOOST_LOG(info) << "Display scaling for "sv << display_name << " set to "sv << percent << '%';
     } else {
-      BOOST_LOG(warning) << "Could not set virtual display scaling to "sv << percent << "% (now "sv << result << ')';
+      BOOST_LOG(warning) << "Could not set display scaling for "sv << display_name << " to "sv << percent << "% (now "sv << result << ')';
     }
+  }
+
+  // Desktop mode: the physical display we scaled, and its scaling before that
+  static std::string fold_scaled_display;
+  static int fold_original_dpi = 0;
+
+  static void restore_fold_desktop_dpi() {
+    if (!fold_scaled_display.empty() && fold_original_dpi > 0) {
+      BOOST_LOG(info) << "Restoring display scaling for "sv << fold_scaled_display;
+      apply_fold_dpi(fold_scaled_display, fold_original_dpi);
+    }
+    fold_scaled_display.clear();
+    fold_original_dpi = 0;
+  }
+#endif
+
+  void apply_fold_desktop_dpi(const rtsp_stream::launch_session_t &session) {
+#ifdef _WIN32
+    if (session.virtual_display || !session.fold_desktop || session.fold_dpi <= 0) {
+      return;
+    }
+    std::string name;
+    if (!config::video.output_name.empty()) {
+      name = display_device::map_output_name(config::video.output_name);
+    }
+    if (name.empty() || name.rfind("\\\\.\\", 0) != 0) {
+      name = platf::to_utf8(VDISPLAY::getPrimaryDisplay());
+    }
+    if (name.empty()) {
+      BOOST_LOG(warning) << "Desktop scaling: could not find the streamed display"sv;
+      return;
+    }
+    if (fold_scaled_display != name) {
+      restore_fold_desktop_dpi();
+      auto wname = platf::from_utf8(name);
+      int original = as_user_then_self([&]() { return VDISPLAY::getDisplayScaleByName(wname.c_str()); }, 0);
+      if (original > 0) {
+        fold_scaled_display = name;
+        fold_original_dpi = original;
+      }
+    }
+    apply_fold_dpi(name, session.fold_dpi);
+#endif
   }
 #endif
 
@@ -392,6 +441,7 @@ namespace proc {
       BOOST_LOG(warning) << "Skipping display device settings: virtual display id unknown"sv;
     } else {
       display_device::configure_display(config::video, *launch_session);
+      apply_fold_desktop_dpi(*launch_session);
     }
 
     // We should not preserve display state when using virtual display.
@@ -954,6 +1004,8 @@ namespace proc {
         BOOST_LOG(info) << "HDR revert failed for display " << mode_changed_display;
       }
     }
+
+    restore_fold_desktop_dpi();
 
     bool used_virtual_display = vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK && _launch_session && _launch_session->virtual_display;
     if (used_virtual_display) {

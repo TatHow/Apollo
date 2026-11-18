@@ -647,6 +647,17 @@ int setDisplayScaleByName(const wchar_t* displayName, int percent) {
 	return valueAt(current);
 }
 
+int getDisplayScaleByName(const wchar_t* displayName) {
+	LUID adapterId;
+	uint32_t sourceId;
+	dpi_scale_get_t info;
+	if (!findDisplaySource(displayName, adapterId, sourceId) || !getDpiScale(adapterId, sourceId, info)) {
+		return -1;
+	}
+	int index = -info.minScaleRel + info.curScaleRel;
+	return DPI_VALUES[std::clamp(index, 0, DPI_VALUE_COUNT - 1)];
+}
+
 bool setDisplayHDRByName(const wchar_t* displayName, bool enableAdvancedColor) {
 	LUID adapterId;
 	uint32_t targetId;

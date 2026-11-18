@@ -1423,6 +1423,7 @@ namespace nvhttp {
       // and the current session isn't virtual display at the moment.
       // This should be done before probing encoders as it could change the active displays.
       display_device::configure_display(config::video, *launch_session);
+      proc::apply_fold_desktop_dpi(*launch_session);
 
       // Probe encoders again before streaming to ensure our chosen
       // encoder matches the active GPU (which could have changed

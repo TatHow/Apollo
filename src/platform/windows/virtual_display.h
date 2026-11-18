@@ -32,6 +32,8 @@ namespace VDISPLAY {
 	// Windows display scaling (percent, e.g. 250) for the display with this GDI name.
 	// Returns the scaling now in effect, or -1 if it could not be read.
 	int setDisplayScaleByName(const wchar_t* displayName, int percent);
+	// The Windows display scaling (percent) now in effect, or -1
+	int getDisplayScaleByName(const wchar_t* displayName);
 
 	void closeVDisplayDevice();
 	DRIVER_STATUS openVDisplayDevice();

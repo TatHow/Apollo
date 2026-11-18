@@ -100,6 +100,12 @@ namespace proc {
     std::chrono::seconds exit_timeout;
   };
 
+  /**
+   * @brief Fold build, Desktop mode: set Windows scaling on the streamed physical
+   *        display (restored when the app ends).
+   */
+  void apply_fold_desktop_dpi(const rtsp_stream::launch_session_t &session);
+
   class proc_t {
   public:
     KITTY_DEFAULT_CONSTR_MOVE_THROW(proc_t)
