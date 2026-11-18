@@ -145,7 +145,6 @@ namespace proc {
     apply_fold_dpi(name, session.fold_dpi);
 #endif
   }
-#endif
 
   using namespace std::literals;
   namespace pt = boost::property_tree;
