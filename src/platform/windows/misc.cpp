@@ -1883,8 +1883,20 @@ static std::string ensureCrLf(const std::string& utf8Str) {
     return result;
 }
 
+// Another app can hold the clipboard open for a moment (clipboard managers,
+// RDP, Office), so retry briefly before giving up
+static bool openClipboardWithRetry() {
+  for (int attempt = 0; attempt < 10; attempt++) {
+    if (OpenClipboard(nullptr)) {
+      return true;
+    }
+    Sleep(20);
+  }
+  return false;
+}
+
 static std::wstring getClipboardData() {
-  if (!OpenClipboard(nullptr)) {
+  if (!openClipboardWithRetry()) {
     BOOST_LOG(warning) << "Failed to open clipboard.";
     return L"";
   }
@@ -1912,7 +1924,7 @@ static std::wstring getClipboardData() {
 }
 
 static int setClipboardData(const std::wstring& utf16Str) {
-  if (!OpenClipboard(nullptr)) {
+  if (!openClipboardWithRetry()) {
     BOOST_LOG(warning) << "Failed to open clipboard.";
     return 1;
   }
