@@ -145,10 +145,20 @@ namespace mic_stream {
     auto peer = normalize(address);
 
     std::lock_guard lg {clients_mutex};
+
+    // Try the session from this address first. The key is what authenticates the packet,
+    // so fall back to the others too (the client's mic socket can pick a different
+    // source address than its audio socket, e.g. an IPv6 temporary address).
+    std::vector<std::shared_ptr<client_t>> candidates;
     for (auto &client : clients) {
-      if (client->address != peer) {
-        continue;
+      if (client->address == peer) {
+        candidates.insert(std::begin(candidates), client);
+      } else {
+        candidates.push_back(client);
       }
+    }
+
+    for (auto &client : candidates) {
 
       client->iv.assign(12, 0);
       std::memcpy(client->iv.data(), &data[4], 4);  // already little endian on the wire
