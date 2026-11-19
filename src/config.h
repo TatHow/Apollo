@@ -158,6 +158,8 @@ namespace config {
     bool install_steam_drivers;
     bool keep_default;
     bool auto_capture;
+    std::string virtual_mic;  ///< Playback device that client microphone audio is played into (empty = auto)
+    bool virtual_mic_default;  ///< Make the virtual microphone the default recording device while a client sends mic audio
   };
 
   constexpr int ENCRYPTION_MODE_NEVER = 0;  // Never use video encryption, even if the client supports it

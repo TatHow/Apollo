@@ -26,6 +26,7 @@ extern "C" {
 #include "globals.h"
 #include "input.h"
 #include "logging.h"
+#include "mic_stream.h"
 #include "network.h"
 #include "platform/common.h"
 #include "process.h"
@@ -393,6 +394,8 @@ namespace stream {
 
       audio_fec_packet_t fec_packet;
       std::unique_ptr<platf::deinit_t> qos;
+
+      crypto::aes_t mic_key;  // Key for the client's microphone stream (see mic_stream.h)
     } audio;
 
     struct {
@@ -1293,6 +1296,12 @@ namespace stream {
           return;
         }
 
+        // Microphone audio from a client arrives on the audio port once streaming
+        if (buf_elem == 1 && mic_stream::is_mic_packet({buf[buf_elem].data(), bytes})) {
+          mic_stream::handle_packet(peer.address(), {buf[buf_elem].data(), bytes});
+          return;
+        }
+
         if (bytes == 4) {
           // For legacy PING packets, find the matching session by address.
           auto it = peer_to_session.find(peer.address());
@@ -1937,6 +1946,9 @@ namespace stream {
     auto address = session->audio.peer.address();
     session->audio.qos = platf::enable_socket_qos(ref->audio_sock.native_handle(), address, session->audio.peer.port(), platf::qos_data_type_e::audio, session->config.audioQosType != 0);
 
+    // Accept the client's microphone audio for as long as this session streams audio
+    auto mic_registration = mic_stream::register_client(address, session->audio.mic_key);
+
     BOOST_LOG(debug) << "Start capturing Audio"sv;
     audio::capture(session->mail, session->config.audio, session);
   }
@@ -2210,6 +2222,7 @@ namespace stream {
         true
       };
 
+      session->audio.mic_key = launch_session.gcm_key;
       session->audio.ping_payload = launch_session.av_ping_payload;
       session->audio.avRiKeyId = util::endian::big(*(std::uint32_t *) launch_session.iv.data());
       session->audio.sequenceNumber = 0;

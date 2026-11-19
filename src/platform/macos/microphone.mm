@@ -93,4 +93,9 @@ namespace platf {
   std::unique_ptr<audio_control_t> audio_control() {
     return std::make_unique<macos_audio_control_t>();
   }
+
+  std::unique_ptr<virtual_mic_t> virtual_mic(std::uint32_t sample_rate, int channels) {
+    // Client microphone passthrough is only implemented on Windows so far
+    return nullptr;
+  }
 }  // namespace platf

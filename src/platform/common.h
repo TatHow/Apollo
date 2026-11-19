@@ -552,6 +552,27 @@ namespace platf {
     virtual ~mic_t() = default;
   };
 
+  /**
+   * @brief Plays audio received from a client's microphone into a virtual microphone device on the host.
+   */
+  class virtual_mic_t {
+  public:
+    /**
+     * @brief Queue interleaved 16-bit PCM for playback. Must not block.
+     * @param pcm Samples (frames * channels).
+     * @param frames Number of frames.
+     */
+    virtual void write(const std::int16_t *pcm, std::size_t frames) = 0;
+
+    virtual ~virtual_mic_t() = default;
+  };
+
+  /**
+   * @brief Open the virtual microphone device configured for client mic passthrough.
+   * @return nullptr if this platform has no support for it.
+   */
+  std::unique_ptr<virtual_mic_t> virtual_mic(std::uint32_t sample_rate, int channels);
+
   class audio_control_t {
   public:
     virtual int set_sink(const std::string &sink) = 0;
